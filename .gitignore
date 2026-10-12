@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+myenv/
+venv/
+env/
+.env/
+ENV/
+
+# Environment Variables & Secrets
+.env
+.env.*
+.envrc
+
+# Cryptography / Security
+*.pem
+data/local_signing_key.pem
+
+# Project Specific Data & Output Storage
+storage/
+*.db
+*.db-shm
+*.db-wal
+test_output/
+
+# Root level test images (if any get dropped here)
+/*.png
+/*.jpg
+/*.jpeg
+!/data/templates/*.png  # (Keep the template images)
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.claude/
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
