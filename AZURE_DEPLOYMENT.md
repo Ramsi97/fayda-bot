@@ -90,42 +90,42 @@ This is faster and avoids upload issues with large images. It builds directly in
     - `PRICE_PER_DOWNLOAD`: Birr charged per generated ID card (e.g. `10`).
     - `FREE_SIGNUP_BALANCE`: Birr granted to each new user (default `0`).
     - `ADMIN_CHAT_ID`: (Optional) chat/group to receive deposit receipts. If unset, each `AUTHORIZED_USER_IDS` admin is DMed (they must have started the bot first).
-    - `MONGODB_URI`: your MongoDB connection string, e.g. `mongodb+srv://user:pass@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority` (see Step 4b).
-    - `MONGODB_DB`: database name to use (default `fayda_bot`).
+    - `DATABASE_URL`: your Supabase Postgres connection string (**Session pooler**, port 5432), e.g. `postgresql://postgres.PROJECT_REF:PASSWORD@aws-0-REGION.pooler.supabase.com:5432/postgres` (see Step 4b).
 
 3.  **Set the Port**:
     Add another setting: `WEBSITES_PORT` with value `8000`.
 
 ---
 
-## 💾 Step 4b: MongoDB for balances (REQUIRED)
+## 💾 Step 4b: Supabase Postgres for balances (REQUIRED)
 
-User **balances and deposits live in MongoDB**. The container filesystem is
+User **balances and deposits live in Postgres**. The container filesystem is
 **wiped on every restart/redeploy**, so balances must live in an external
-database — not on disk. A managed MongoDB is also safe if you ever scale to more
-than one instance.
+database — not on disk. A managed Postgres is also safe if you ever scale to more
+than one instance. The bot creates its own tables on first launch (no manual SQL
+needed; see `schema.sql` for reference).
 
-**Recommended: MongoDB Atlas free tier (M0).**
-1. Create a free cluster at [mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas/register) (the M0 tier is free and plenty for this).
-2. **Database Access** → add a database user (username + password). Save the password.
-3. **Network Access** → add IP `0.0.0.0/0` (allow from anywhere) so the Azure Web App can connect. *(Tighten this later to Azure's outbound IPs if you want.)*
-4. **Connect** → **Drivers** → copy the connection string. It looks like:
+**Recommended: Supabase free tier.**
+1. Create a free project at [supabase.com](https://supabase.com/dashboard) (pick a region close to your Azure region). Set a strong **database password** when prompted — save it.
+2. No IP allowlist to manage — Supabase accepts connections from any IP by default, so the Azure Web App can connect out of the box.
+3. **Project Settings → Database → Connection string → Session pooler** → copy the URI. It looks like:
    ```
-   mongodb+srv://<user>:<password>@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+   postgresql://postgres.PROJECT_REF:[YOUR-PASSWORD]@aws-0-REGION.pooler.supabase.com:5432/postgres
    ```
-   Replace `<user>` / `<password>` with the credentials from step 2.
-5. In the Web App → **Configuration**, set:
-   - `MONGODB_URI` = that connection string.
-   - `MONGODB_DB` = `fayda_bot` (or any name you like; it's created on first write).
+   Replace `[YOUR-PASSWORD]` with the password from step 1. URL-encode any special characters in the password (e.g. `@` → `%40`).
+   > Use the **Session pooler** (IPv4, port 5432) for this long-lived bot — not the Transaction pooler (6543, for serverless) or the direct `db.<ref>.supabase.co` host (IPv6-only without a paid add-on). TLS is required and handled automatically.
+4. In the Web App → **Configuration**, set:
+   - `DATABASE_URL` = that connection string.
 
 > No volume, `DB_PATH`, or `WEBSITES_ENABLE_APP_SERVICE_STORAGE` is needed anymore
 > — those were only for the old SQLite file.
 
-**Local development:** run MongoDB locally (`docker run -d -p 27017:27017 mongo`)
-and the defaults (`mongodb://localhost:27017`, db `fayda_bot`) work out of the box.
+**Local development:** run Postgres locally (`docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres`)
+and the default (`postgresql://postgres:postgres@localhost:5432/postgres`) works
+out of the box (TLS is auto-disabled for localhost).
 
 > ⚠️ Verify persistence after deploy: check a balance, restart the Web App, check
-> again — it must be unchanged (the data lives in Atlas, not the container).
+> again — it must be unchanged (the data lives in Supabase, not the container).
 
 ---
 

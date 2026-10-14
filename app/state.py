@@ -24,9 +24,13 @@ class DepositStates(StatesGroup):
 
 
 class AdminStates(StatesGroup):
-    waiting_cbe_name      = State()
-    waiting_cbe_number    = State()
-    waiting_telebirr_name = State()
+    waiting_cbe_name        = State()
+    waiting_cbe_number      = State()
+    waiting_telebirr_name   = State()
     waiting_telebirr_number = State()
-    waiting_price         = State()
-    waiting_add_admin_id  = State()
+    waiting_price           = State()
+    waiting_add_admin_id    = State()
+    waiting_add_agent_id    = State()   # super-admin: add agent (VIP-only, no earnings)
+    waiting_add_vip_id      = State()   # super-admin or agent: add free VIP user
+    waiting_set_templates   = State()   # super-admin: set allowed templates for an admin
+    waiting_set_user_price  = State()   # admin: set a per-user price override

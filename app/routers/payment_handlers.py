@@ -137,6 +137,30 @@ async def start_deposit(message: types.Message, state: FSMContext):
     )
 
 
+async def _resolve_payment_admin_doc(
+    billing,
+    admin_doc: Optional[dict],
+    owner_admin_id: Optional[int],
+) -> tuple[Optional[dict], Optional[int]]:
+    """Resolve payment account document and receiving admin ID.
+
+    If owner is an agent (or user has no owner / admin has no payment accounts set),
+    route payment accounts and receipts to the primary super admin.
+    """
+    if admin_doc is None and owner_admin_id is not None:
+        admin_doc = await billing.get_admin(owner_admin_id)
+
+    # Agents cannot have payment accounts — route their users to super admin
+    if (admin_doc and admin_doc.get("role") == "agent") or owner_admin_id is None:
+        super_ids = settings.super_admin_ids_ordered
+        primary_super = super_ids[0] if super_ids else None
+        if primary_super:
+            super_doc = await billing.get_admin(primary_super)
+            return super_doc, primary_super
+
+    return admin_doc, owner_admin_id
+
+
 # ── Step 2: Choose Payment Method ────────────────────────────────────────────
 
 @router.message(DepositStates.choosing_method, F.text == "🏦 CBE")
@@ -148,8 +172,7 @@ async def choose_cbe(
     owner_admin_id: Optional[int] = None,
 ):
     """User selected CBE — show account info and ask for amount."""
-    if admin_doc is None and owner_admin_id is not None:
-        admin_doc = await billing.get_admin(owner_admin_id)
+    admin_doc, _ = await _resolve_payment_admin_doc(billing, admin_doc, owner_admin_id)
 
     cbe_info = admin_doc.get("cbe", {}) if admin_doc else {}
     name = cbe_info.get("name", "").strip()
@@ -180,8 +203,7 @@ async def choose_telebirr(
     owner_admin_id: Optional[int] = None,
 ):
     """User selected Telebirr — show phone info and ask for amount."""
-    if admin_doc is None and owner_admin_id is not None:
-        admin_doc = await billing.get_admin(owner_admin_id)
+    admin_doc, _ = await _resolve_payment_admin_doc(billing, admin_doc, owner_admin_id)
 
     telebirr_info = admin_doc.get("telebirr", {}) if admin_doc else {}
     name = telebirr_info.get("name", "").strip()
@@ -249,14 +271,17 @@ async def receive_receipt(
     user = message.from_user
     name = user.full_name or user.username or "ተጠቃሚ"
 
-    # Persist a PENDING deposit linked to owner_admin_id
+    # Route agent's downline deposits to the primary super admin
+    _, target_admin_id = await _resolve_payment_admin_doc(billing, None, owner_admin_id)
+
+    # Persist a PENDING deposit linked to target_admin_id
     deposit_id = await billing.create_pending_deposit(
         telegram_id=user.id,
         amount=amount,
         method=method,
         receipt_file_id=file_id,
         name=name,
-        admin_id=owner_admin_id,
+        admin_id=target_admin_id,
     )
 
     # Forward the receipt to admin with Approve/Reject buttons
@@ -268,15 +293,15 @@ async def receive_receipt(
     notified = False
 
     # Attempt to notify owning admin first, fall back to super admins if needed
-    for admin_id in _admin_targets(owner_admin_id):
+    for admin_id in _admin_targets(target_admin_id):
         try:
             await message.bot.send_photo(
                 chat_id=admin_id, photo=file_id, caption=caption,
                 reply_markup=kb, parse_mode="Markdown",
             )
             notified = True
-            # If owner admin was successfully notified in DM, we don't spam super admins
-            if admin_id == owner_admin_id:
+            # If target admin was successfully notified in DM, we don't spam super admins
+            if admin_id == target_admin_id:
                 break
         except Exception as e:
             print(f"[deposit] failed to notify admin {admin_id}: {e}")

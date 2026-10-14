@@ -1,5 +1,15 @@
 # utils/texts.py
 
+# ── Access control ─────────────────────────────────────────────────────────────
+# Shown to users who open the bot without a valid reseller invite link. {contact}
+# is filled from settings.support_contact (a tappable @username, or the generic
+# "the administrator" fallback). Sent as plain text — no parse_mode — so an
+# @username with underscores stays intact and auto-links to the profile.
+NO_ACCESS = (
+    "⚠️ You do not have access to this bot.\n\n"
+    "Please contact {contact} to get an access link."
+)
+
 WELCOME_TEXT = """
 Welcome to the National ID Fayda Printable Converter Service! 🎉
 
@@ -177,4 +187,49 @@ DEPOSIT_REJECTED = (
     "💰 መጠን: {amount} ብር\n\n"
     "እባክዎ ትክክለኛ የክፍያ ማረጋገጫ (ስክሪንሾት) ይላኩ ወይም እንደገና ይሞክሩ።\n"
     "ጥያቄ ካለዎት አስተዳዳሪውን ያነጋግሩ።"
+)
+
+
+# ── Welcome DMs sent when the super admin / agent adds someone ─────────────────
+# Delivered best-effort by admin_handlers._send_welcome (a bot cannot DM a user
+# who has never started it). Markdown — keep dynamic parts (links) in backticks.
+
+ADMIN_WELCOME = (
+    "🎉 *You've been added as a Reseller Admin!*\n\n"
+    "You can now resell the National ID service to your own customers.\n\n"
+    "• Type /admin to open your dashboard.\n"
+    "• Set your *CBE / Telebirr* accounts so customers can pay you.\n"
+    "• Set your *price per card*.\n"
+    "• Share your referral link so customers bind to you:\n"
+    "`{link}`\n\n"
+    "💰 Your customers' payments go straight to your own accounts."
+)
+
+AGENT_WELCOME = (
+    "🎉 *You've been added as an Agent!*\n\n"
+    "• Type /admin to open your agent panel.\n"
+    "• You can add *VIP users* who get direct access to the bot.\n"
+    "• Payments from your users go through the system's official accounts "
+    "(you don't collect money directly).\n\n"
+    "🤝 Welcome aboard!"
+)
+
+VIP_WELCOME = (
+    "🎉 *You've been granted FREE VIP access!*\n\n"
+    "You can now generate printable National ID cards *completely free* — "
+    "no payment and no invite link needed.\n\n"
+    "🪪 Just type /start to begin.\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "🎉 *ነፃ የVIP አገልግሎት ተሰጥቶዎታል!*\n"
+    "አሁን ያለክፍያ የብሔራዊ መታወቂያ ካርድ ማዘጋጀት ይችላሉ። ለመጀመር /start ይጫኑ።"
+)
+
+VIP_PAYING_WELCOME = (
+    "🎉 *You've been granted bot access!*\n\n"
+    "You can now use the National ID service directly — no invite link needed.\n\n"
+    "• Type /start to begin.\n"
+    "• You'll *deposit via CBE / Telebirr* and pay per card.\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━━\n"
+    "🎉 *የቦት አገልግሎት ተፈቅዶልዎታል!*\n"
+    "ለመጀመር /start ይጫኑ። ክፍያ በCBE / ቴሌብር አስገብተው በእያንዳንዱ ካርድ ይከፍላሉ።"
 )

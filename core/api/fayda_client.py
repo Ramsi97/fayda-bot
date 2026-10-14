@@ -43,11 +43,28 @@ REDIRECT_URI    = "https://resident.fayda.et/callback"
 SCOPE           = "openid profile email"
 ACR             = "mosip:idp:acr:generated-code"
 
-COMMON_HEADERS = {
-    "Origin":  "https://resident.fayda.et",
-    "Referer": "https://resident.fayda.et/",
-    "User-Agent": "Mozilla/5.0 (compatible; FaydaBot/1.0)",
+# auth.fayda.et enforces same-origin CORS on its API endpoints (CSRF, oauth-details,
+# send-otp, authenticate, auth-code).  Sending Origin: resident.fayda.et triggers a
+# 403 "Invalid CORS request".  Use separate header sets per base URL.
+_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
+AUTH_HEADERS = {
+    "Origin":          "https://auth.fayda.et",
+    "Referer":         "https://auth.fayda.et/",
+    "User-Agent":      _UA,
+    "Accept-Language": "en-US,en;q=0.9",
 }
+RESIDENT_HEADERS = {
+    "Origin":          "https://resident.fayda.et",
+    "Referer":         "https://resident.fayda.et/",
+    "User-Agent":      _UA,
+    "Accept-Language": "en-US,en;q=0.9",
+}
+# Keep the old name as an alias so any external code that imports COMMON_HEADERS still works.
+COMMON_HEADERS = AUTH_HEADERS
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -145,8 +162,10 @@ class FaydaSession:
 
         # httpx client — retries/backoff are handled by FaydaClient._send so a
         # single transient blip on Fayda's flaky servers doesn't kill the flow.
+        # Default headers use AUTH_HEADERS (auth.fayda.et same-origin CORS).
+        # Calls to api-resident.fayda.et pass RESIDENT_HEADERS explicitly.
         self.client = httpx.AsyncClient(
-            headers=COMMON_HEADERS,
+            headers=AUTH_HEADERS,
             follow_redirects=True,
             timeout=httpx.Timeout(connect=15.0, read=60.0, write=30.0, pool=15.0),
         )
@@ -404,7 +423,10 @@ class FaydaClient:
         }
         r = await self._send(
             sess, "POST", f"{RESIDENT_BASE}/esignet/exchangeAutheCode",
-            json=jwt_body, retries=retries, label="exchangeAutheCode",
+            json=jwt_body,
+            # api-resident.fayda.et expects Origin: resident.fayda.et
+            headers=RESIDENT_HEADERS,
+            retries=retries, label="exchangeAutheCode",
         )
         r.raise_for_status()
         sess.jwt = r.text.strip().strip('"')
@@ -413,7 +435,8 @@ class FaydaClient:
         r2 = await self._send(
             sess, "POST", f"{RESIDENT_BASE}/esignet/exchangeResident",
             json={"headers": {"Content-Type": "application/json"}},
-            headers={"X-Authorization": f"Bearer {sess.jwt}"},
+            # Merge RESIDENT_HEADERS with the auth token header
+            headers={**RESIDENT_HEADERS, "X-Authorization": f"Bearer {sess.jwt}"},
             retries=retries, label="exchangeResident",
         )
         r2.raise_for_status()

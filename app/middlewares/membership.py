@@ -1,6 +1,7 @@
 from typing import Any, Callable, Dict, Awaitable
 from aiogram import BaseMiddleware, types
 from app.config import settings
+from utils.texts import NO_ACCESS
 
 class MembershipMiddleware(BaseMiddleware):
     async def __call__(
@@ -28,6 +29,9 @@ class MembershipMiddleware(BaseMiddleware):
             role = await billing.get_role(user.id)
             if role in ("super_admin", "admin"):
                 admin_doc = await billing.get_admin(user.id)
+            elif role in ("vip", "agent"):
+                # VIP/agent: free or restricted-panel users — no admin_doc needed
+                pass
             else:
                 owner_admin_id = await billing.get_owner(user.id)
                 if owner_admin_id is not None:
@@ -38,12 +42,22 @@ class MembershipMiddleware(BaseMiddleware):
         data["owner_admin_id"] = owner_admin_id
         data["admin_doc"] = admin_doc
 
-        # Admins and super admins bypass owner-gate and group-gate
+        # Super admins and admins bypass all gates
         if role in ("super_admin", "admin") or user.id in settings.super_admins:
             return await handler(event, data)
 
-        # Normal user: Owner Gate check
-        # A normal user with no owner is blocked for everything except /start
+        # VIP users bypass the owner-gate — they use the bot for free but have no
+        # reseller/admin panel access (handlers check role != 'vip').
+        if role == "vip" or user.id in settings.vip_users:
+            return await handler(event, data)
+
+        # Agents bypass the owner-gate — they access the restricted agent panel.
+        if role == "agent":
+            return await handler(event, data)
+
+        # Owner Gate — access is fully database-driven: a normal user must be
+        # bound to a reseller admin (via their invite link). An unbound user is
+        # blocked for everything except /start, which is exempt so they can bind.
         is_start = False
         if event.message and event.message.text:
             text = event.message.text.strip()
@@ -52,55 +66,14 @@ class MembershipMiddleware(BaseMiddleware):
 
         if owner_admin_id is None:
             if not is_start:
-                msg = (
-                    "⚠️ You do not have access to this bot.\n\n"
-                    "Please contact your reseller to get an access link."
-                )
+                msg = NO_ACCESS.format(contact=settings.support_contact)
                 if event.message:
                     await event.message.answer(msg)
                 elif event.callback_query:
                     await event.callback_query.answer(msg, show_alert=True)
                 return  # Block update
-            # Exempt /start from group-gate so unbound users can bind
             return await handler(event, data)
 
-        # Group Gate check (applied to bound normal users)
-        if not settings.REQUIRED_GROUP_ID:
-            return await handler(event, data)
+        # Bound normal user — DB binding is the only access gate, so allow through.
+        return await handler(event, data)
 
-        try:
-            member = await event.bot.get_chat_member(
-                chat_id=settings.REQUIRED_GROUP_ID,
-                user_id=user.id
-            )
-
-            # Allowed statuses: owner, creator, administrator, member, restricted (still in group)
-            if member.status in ["owner", "creator", "administrator", "member", "restricted"]:
-                return await handler(event, data)
-
-            restriction_msg = (
-                "⚠️ This bot is only available for members of our official group.\n\n"
-                "Please join the group first to use the service."
-            )
-
-            if event.message:
-                await event.message.answer(restriction_msg)
-            elif event.callback_query:
-                await event.callback_query.answer(restriction_msg, show_alert=True)
-
-            return  # Block update
-
-        except Exception as e:
-            print(f"❌ Membership Error for User {user.id} in Chat {settings.REQUIRED_GROUP_ID}: {e}")
-
-            error_msg = (
-                "⚠️ Bot configuration error.\n"
-                "The membership check failed. Please contact the administrator."
-            )
-
-            if event.message:
-                await event.message.answer(error_msg)
-            elif event.callback_query:
-                await event.callback_query.answer(error_msg, show_alert=True)
-
-            return  # Block update

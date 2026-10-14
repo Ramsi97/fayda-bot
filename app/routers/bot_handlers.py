@@ -15,6 +15,7 @@ from utils.texts import (
     FAN_PROMPT,
     FIN_PROMPT,
     INSUFFICIENT_BALANCE,
+    NO_ACCESS,
     OTP_INVALID,
     OTP_PROMPT,
     WELCOME_TEXT,
@@ -51,12 +52,18 @@ def kb_color():
     )
 
 
-def kb_template():
+def kb_template(allowed: list[str] | None = None):
+    """Template selection keyboard. `allowed` limits which buttons appear."""
+    all_templates = [("🆔 Template A", "A"), ("🆔 Template B", "B")]
+    if allowed is None:
+        allowed = ["A", "B"]
+    buttons = [
+        types.KeyboardButton(text=label)
+        for label, key in all_templates
+        if key in allowed
+    ]
     return types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="🆔 Template A"), types.KeyboardButton(text="🆔 Template B")],
-            [types.KeyboardButton(text="🔙 Back to Menu")],
-        ],
+        keyboard=[buttons, [types.KeyboardButton(text="🔙 Back to Menu")]],
         resize_keyboard=True,
         persistent=True,
     )
@@ -95,8 +102,8 @@ async def cmd_start(
     await _cleanup_user_sessions(message.from_user.id)
     await state.clear()
 
-    # 1. Already admin: normal menu, no binding
-    if role in ("super_admin", "admin"):
+    # 1. Already admin, agent, or VIP: normal menu, no binding
+    if role in ("super_admin", "admin", "agent", "vip"):
         await billing.ensure_user(message.from_user.id, message.from_user.full_name)
         await message.answer(
             WELCOME_TEXT,
@@ -136,10 +143,7 @@ async def cmd_start(
             return
 
     # 4. No owner + missing/invalid/inactive ref: blocked message, return before ensure_user
-    await message.answer(
-        "⚠️ You do not have access to this bot.\n\n"
-        "Please ask your reseller for an access link to use this bot."
-    )
+    await message.answer(NO_ACCESS.format(contact=settings.support_contact))
     return
 
 
@@ -175,19 +179,33 @@ async def mode_multiple(message: types.Message, state: FSMContext, billing):
 # ── Color Selection ────────────────────────────────────────────────────────────
 
 @router.message(FaydaBotStates.choosing_color, F.text.in_(["🎨 Color", "⚫ Black & White"]))
-async def choose_color(message: types.Message, state: FSMContext):
+async def choose_color(message: types.Message, state: FSMContext, billing):
     is_color = message.text == "🎨 Color"
     await state.update_data(is_color=is_color)
     await state.set_state(FaydaBotStates.choosing_template)
-    await message.answer("🆔 Select ID card template:", reply_markup=kb_template())
+    allowed = await billing.get_allowed_templates(message.from_user.id)
+    await message.answer("🆔 Select ID card template:", reply_markup=kb_template(allowed))
 
 
 # ── Template Selection ─────────────────────────────────────────────────────────
 
 @router.message(FaydaBotStates.choosing_template, F.text.in_(["🆔 Template A", "🆔 Template B"]))
-async def choose_template(message: types.Message, state: FSMContext):
-    template = "B" if "Template B" in message.text else "A"
-    await state.update_data(template=template)
+async def choose_template(message: types.Message, state: FSMContext, billing):
+    requested = "B" if "Template B" in message.text else "A"
+
+    # Check what templates this user is allowed to use.
+    allowed = await billing.get_allowed_templates(message.from_user.id)
+
+    if requested not in allowed:
+        allowed_str = " and ".join(f"Template {t}" for t in allowed)
+        await message.answer(
+            f"⛔ Template {requested} is not available for your account.\n"
+            f"You can use: {allowed_str}.",
+            reply_markup=kb_template(allowed),
+        )
+        return
+
+    await state.update_data(template=requested)
 
     data = await state.get_data()
     mode = data.get("mode", "single")
@@ -227,9 +245,11 @@ async def single_receive_fin(message: types.Message, state: FSMContext, processo
     try:
         session = await processor.initiate_otp(fan)
     except Exception as e:
+        # Fix #3: edit_text only accepts InlineKeyboardMarkup — passing
+        # kb_cancel() (a ReplyKeyboardMarkup) raises a pydantic ValidationError.
+        # Drop reply_markup here; the user's existing reply keyboard stays intact.
         await status.edit_text(
             f"❌ Failed to request OTP: {e}\n\nPlease check your FAN number and try again.",
-            reply_markup=kb_cancel(),
         )
         return
 
@@ -317,9 +337,10 @@ async def batch_receive_fin(message: types.Message, state: FSMContext, processor
     try:
         session = await processor.initiate_otp(fan)
     except Exception as e:
+        # Fix #3 (batch): edit_text cannot take a ReplyKeyboardMarkup.
         await status.edit_text(
             f"❌ Failed to request OTP for `{fan}`: {e}\n\nPlease try this ID again.",
-            reply_markup=kb_collecting(len(batch_items)),
+            parse_mode="Markdown",
         )
         await state.set_state(FaydaBotStates.batch_collecting)
         return

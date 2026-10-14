@@ -15,9 +15,9 @@ bot = Bot(token=settings.TELEGRAM_TOKEN, session=session)
 dp = Dispatcher(storage=MemoryStorage())
 scheduler = AsyncIOScheduler()
 
-# Billing (MongoDB-backed balances). init_db() is awaited at startup
+# Billing (Postgres/Supabase-backed balances). init_db() is awaited at startup
 # (app/main.py lifespan and run_local.py) before any update is handled.
-billing = BillingService(settings.MONGODB_URI, settings.MONGODB_DB)
+billing = BillingService(settings.DATABASE_URL)
 
 # Singleton processor to ensure the lock is shared globally. It charges the
 # user's balance (via billing) only after a card is successfully delivered.
